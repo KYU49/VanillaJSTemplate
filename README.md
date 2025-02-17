@@ -1,0 +1,2 @@
+# VanillaJSTemplate
+Vanilla JSでhtmlページを作る際のテンプレート。MVCモデルやDataBindingを実装済み。
