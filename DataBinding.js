@@ -53,12 +53,17 @@ export class DataBinding{
             this.eventListenerType = eventListenerType;
         }
     }
-    // InputTextにbindしたい場合のテンプレート
+    // `input type="text"`や`textarea`などにbindしたい場合のテンプレート
     static BoundInputText = class extends DataBinding.BoundElement {
         constructor(element){
             super(element, 
                 (newValue, element) => {
+                    // 一応カーソル位置を保持。javascriptのselectionは文字数より大きい値を入れてもerrorを出さない。
+                    start = element.selectionStart;
+                    end = element.selectionEnd;
                     element.value = newValue;
+                    element.selectionStart = start;
+                    element.selectionEnd = end;
                 },
                 (parent, element) => {
                     parent.value = element.value;
