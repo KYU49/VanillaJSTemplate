@@ -32,6 +32,7 @@
                 for(let listener in tempListeners){
                     tempListeners[listener].apply(this.listeners, args);
                     // applyの参考: https://devsakaso.com/javascript-bind-call-apply-methods/
+                    //              https://ginpen.com/2017/12/17/rest-parameters/
                 }
             }
         }
