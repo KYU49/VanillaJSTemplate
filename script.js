@@ -1,5 +1,6 @@
-(function(){
+import { DataBinding } from "./DataBinding.js";
 
+(function(){
     // ViewでaddEventListnerなどを記述した際は、EventDispatcherにcallbackをつけて登録する。クリックイベントなどをトリガーにDispatcherを介して、Controllerが呼び出され、ControllerがModelのメソッドを呼び出し、結果がcallback関数に渡される。
     class EventDispatcher {
         constructor (){
@@ -55,7 +56,7 @@
 
         submitValue(value = 1){
             // 普通はWeb関連の処理がここに入るため、modelで実行。
-            const result = 2;
+            const result = "って入力されているね！";
             this.dispatchEvent(Model.CONST.VALUE_CHANGED, value, result);
         }
     }
@@ -95,7 +96,7 @@
 
             // modelからこのView操作を呼び出せるようにする見本
             this.model.addEventListener(Model.CONST.VALUE_CHANGED, (value1, value2) => {
-                alert(value1 + ", " + value2);
+                alert(value1 + value2);
             });
 
             // modelの値を呼び出してsubmit。

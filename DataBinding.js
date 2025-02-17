@@ -1,14 +1,18 @@
-class DataBinding{
+export class DataBinding{
     /**
      * @typedef {[BoundElement]} #boundElements この変数にbindされているhtml elementと、bindの情報。
      * @typedef {Object} #value ここに値が入る。getterとsetterで制御。
+     * @typedef {boolean} overrideWithState 例えばページを更新した際に、前の入力が残っていた場合、true: 前の入力で変数を上書き; false: 変数のデフォルト値でelementの値を書き換え。
+     * @typedef {boolean} globalOverrideWithState 以降に作られるobjectの全てのisStateOverrideはこの値になる。
      */
     #value;
     #boundElements = [];
-    self = this;
+    overrideWithState;
+    static globalOverrideWithState = false;
 
     constructor(initialVal){
         this.#value = initialVal;
+        this.overrideWithState = DataBinding.globalOverrideWithState;
     }
 
     get value(){
@@ -39,12 +43,8 @@ class DataBinding{
          * @param {string} eventListenerType inputとかchangedとか。
          */
         constructor(element, 
-            value2element = (parent, element) => {}, 
-            element2value=(
-                (parent, element) => {
-                    parent.value = element.value;
-                }
-            ),
+            value2element = (newValue, element) => {}, 
+            element2value =(parent, element) => {},
             eventListenerType = null
         ){
             this.element = element;
@@ -146,7 +146,7 @@ class DataBinding{
 
     /**
      * 指定した任意のelementに値をbindする。
-     * @param {BoundElement | Element} newElement 通知先のelementを含むboundElement object。Elemmentが渡された場合はBoundInputTextに入れる。
+     * @param {DataBinding.BoundElement | Element} newElement 通知先のelementを含むboundElement object。Elemmentが渡された場合はBoundInputTextに入れる。
      */
     bindElement(newElement){
         const self = this;
@@ -154,11 +154,18 @@ class DataBinding{
         const boundElement = (newElement instanceof DataBinding.BoundElement) ? newElement : new DataBinding.BoundInputText(newElement);
         // この変数にbindされているElement集に追加
         this.#boundElements.push(boundElement);
-        // eventlistenerが指定されていれば
+        // eventlistenerが指定されていれば、設定。
         if(boundElement.eventListenerType != null){
             boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
                 boundElement.element2value(self, boundElement.element);
             });
+
+            // 更新前の情報が残ってしまうことがあるため、どちらかの値で上書きする。
+            if(this.overrideWithState){
+                boundElement.element2value(self, boundElement.element);
+            } else {
+                boundElement.value2element(this.value, boundElement.element);
+            }
         }
     }
 }

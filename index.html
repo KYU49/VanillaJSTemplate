@@ -4,8 +4,7 @@
 	<meta charset="utf-8">
     <meta name="description" content="すっごくてすごいツール" />
     <link rel="stylesheet" href="style.css">
-    <script src="DataBinding.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js" type="module"></script>
 	<title>すっごいツール</title>
 </head>
 <body>
@@ -14,7 +13,10 @@
         <form name="testForm">
             <input name="testText" type="text" placeholder="Test" />
             <input name="testButton" type="submit" value="Test" />
-            <input name="testCheck" type="checkbox" />
+            <div>
+                <input name="testCheck" id="testCheck" type="checkbox" />
+                <label for="testCheck">テキストボックスの非表示と、送信ボタンの無効化</label>
+            </div>
         </form>
         Test<br>
         Test<br>
