@@ -1,0 +1,164 @@
+class DataBinding{
+    /**
+     * @typedef {[BoundElement]} #boundElements この変数にbindされているhtml elementと、bindの情報。
+     * @typedef {Object} #value ここに値が入る。getterとsetterで制御。
+     */
+    #value;
+    #boundElements = [];
+    self = this;
+
+    constructor(initialVal){
+        this.#value = initialVal;
+    }
+
+    get value(){
+        return this.#value;
+    }
+    set value(newValue){
+        // 各エレメントに値の変更を通知
+        if(this.#value != newValue){
+            for(const tempElement of this.#boundElements){
+                tempElement.value2element(newValue, tempElement.element);
+            }
+            this.#value = newValue;
+        }
+    }
+
+    static BoundElement = class {
+
+        /**
+         * 値が変更されたときに発火。html elementに変更された新しい値を通知する。defaultではinputのvalue。
+         * @param {DataBinding} parent 呼び出し元のDataBinding自体。主に`parent.value = hoge;`として使う
+         * @param {Element} element 通知先のElement
+         *
+         * html elementの値が変更された(eventListenerTypeが呼ばれた)ときに発火。html elementから値(defaultではvalue)を読み込み、変数に代入する。
+         * @param {Element} element 値が変更されたelement。
+         * @return {string | boolean | number} 変更後の値。これが自動でproxyに設定される。
+         * 
+         * html elementのどのeventlistenerに応じて値の変更を監視するか。
+         * @param {string} eventListenerType inputとかchangedとか。
+         */
+        constructor(element, 
+            value2element = (parent, element) => {}, 
+            element2value=(
+                (parent, element) => {
+                    parent.value = element.value;
+                }
+            ),
+            eventListenerType = null
+        ){
+            this.element = element;
+            this.value2element = value2element;
+            this.element2value = element2value;
+            this.eventListenerType = eventListenerType;
+        }
+    }
+    // InputTextにbindしたい場合のテンプレート
+    static BoundInputText = class extends DataBinding.BoundElement {
+        constructor(element){
+            super(element, 
+                (newValue, element) => {
+                    element.value = newValue;
+                },
+                (parent, element) => {
+                    parent.value = element.value;
+                },
+                "input"
+            );
+        }
+    }
+    // 要素のinnerHTMLにbindしたい場合のテンプレート
+    static BoundInnerHTML = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    element.innerHTML = newValue;
+                }
+            )
+        }
+    }
+    // checkboxにbindしたい場合のテンプレート
+    static BoundCheckbox = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    element.checked = newValue;
+                },
+                (parent, element) => {
+                    parent.value = element.checked;
+                },
+                "change"
+            )
+        }
+    }
+    // booleanの数値に対して、elementの可視化状態をbindしたい場合のテンプレート。別途cssで`.hidden{display: "none";}`の指定が必要
+    static BoundVisible = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    if(newValue){
+                        if(element.classList.contains("hidden")){
+                            element.classList.remove("hidden");
+                        }
+                    } else {
+                        element.classList.add("hidden");
+                    }
+                }
+            )
+        }
+    }
+    // booleanの数値に対して、elementの可視化状態をbindしたい場合のテンプレート。trueで消える。別途cssで`.hidden{display: "none";}`の指定が必要
+    static BoundInvisible = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    if(!newValue){
+                        if(element.classList.contains("hidden")){
+                            element.classList.remove("hidden");
+                        }
+                    } else {
+                        element.classList.add("hidden");
+                    }
+                }
+            )
+        }
+    }
+    // booleanの数値に対して、elementのdisabled状態をbindしたい場合のテンプレート。
+    static BoundEnabled = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    element.disabled = !newValue;
+                }
+            )
+        }
+    }
+    // booleanの数値に対して、elementのdisabled状態をbindしたい場合のテンプレート。
+    static BoundDisabled = class extends DataBinding.BoundElement{
+        constructor(element){
+            super(element,
+                (newValue, element) => {
+                    element.disabled = newValue;
+                }
+            )
+        }
+    }
+
+    /**
+     * 指定した任意のelementに値をbindする。
+     * @param {BoundElement | Element} newElement 通知先のelementを含むboundElement object。Elemmentが渡された場合はBoundInputTextに入れる。
+     */
+    bindElement(newElement){
+        const self = this;
+        // HTML Elemmentが渡された場合はBoundInputTextに入れる。
+        const boundElement = (newElement instanceof DataBinding.BoundElement) ? newElement : new DataBinding.BoundInputText(newElement);
+        // この変数にbindされているElement集に追加
+        this.#boundElements.push(boundElement);
+        // eventlistenerが指定されていれば
+        if(boundElement.eventListenerType != null){
+            boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
+                boundElement.element2value(self, boundElement.element);
+            });
+        }
+    }
+}
