@@ -26,14 +26,28 @@
 // 参考 Vue.js: https://unpkg.com/vue@3.0.0/dist/vue.global.js
 const Euonymus = (function(exports){
 	/**
-	 * メインとなるviewを生成するためのfunction
-	 * @param {string} tag aやらdivやらspanやら。refの指定不可。
+	 * objectをProxyにして返す役割。！！もしかすると、classにする必要があるかも？初めて値が呼び出される際に、呼び出し元のcomponentを記録し、必要に応じて双方向bindingを設定する必要がある。
+	 * @param {object} viewmodel この中身をProxyにぶち込む
+	 */
+	const ViewModel = function(viewmodel){
+		return new Proxy(viewmodel, {
+			get(target, prop, receiver){
+				//TODO getが走った際に、そのgetを呼び出したオブジェクト(this)の情報を読み取ることはできるか？
+			}
+		});
+	};
+
+	/**
+	 * メインとなるviewを生成するためのfunction。直接オブジェクトを渡せばいいんだけど、関数定義することで補完が効くようにしている。
+	 * @param {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
+	 * 					↓やっぱり、ViewModelはViewModelを継承したclassとして実装させて、依存性注入的にsingletonで生成すべき。
 	 * @param {object} viewmodel { visible: new State(true), fontsize: new State(10), click: (e) => {visible = !visible} }のような形で渡す。
-	 * @param {(object) => Element | string} contents Viewをjsで指定していく。stringでinnerHTMLを指定することも可能で、テンプレートリテラルのように"名前は<b>${viewmodl.name}</b>です。"のような指定も可能。
-	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${viewmodel.fontsize}px"}といった指定も可能。
-	 * @param {[string]} classList classは予約語のため、classList。"viewmodel.visible ? 'visible' : 'hidden'"のような設定をすることも可能。
+	 * @param {() => Generator<Component, void, void> | string} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、テンプレートリテラルのように"名前は<b>${vm.name}</b>です。"のような指定も可能。
+	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${vm.fontsize}px"}といった指定も可能。
+	 * @param {[string]} classList classは予約語のため、classList。"${vm.visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
 	 * @param {(Event) => void | [(Event) => void]} events eventsを{type: "change", callback: click}の形で指定するか、それを含む配列を指定。
-	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: true}など。
+	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
+	 * @return {object} 2回目以降は再生成しない。vm.fontsizeなどの内部の値は変化するが、渡される変数自体は変化しないため。
 	 */
 	const el = function(
 		tag = "section",
@@ -44,30 +58,57 @@ const Euonymus = (function(exports){
 		events = [],
 		args = {}
 	){
-		return new Component(tag, viewmodel, contents, style, classList, events, args).contents;
+		let obj = null;
+		return (() => {
+			if(obj == null){
+				obj = {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
+			}
+			return obj;
+		})();
 	};
 
 	const Component = class{
-		#el;
-		#parent = null;
-		#children = null;
+		/** @type {boolean} componentを描画済みならtrue。trueの場合、値だけ変更して、前回のcomponentを再利用する */
+		#composed = false;
+		/** @type {Element} コンポーネントのroot element */
+		el = null;
+		/** @type {ParentElement | null} 親のDOM element*/
+		#parentElement = null;
+		/** @type {Component[]} 子コンポーネントのinstance */
+		#children = [];
+		/** @type {string} htmlタグの要素aとかdivとか */
 		#tag;
+		/** @type {ViewModel} viewmodel。Proxyをwrapした独自classを返すfunctionを入れる？未定 */
 		#viewmodel;
+		
 		contents;
 		#style;
 		#classList;
 		#events;
 		#args;
+		id;
+		static getUniqueId = (() => {
+			let currentId = 0;
+			const map = new WeakMap();
+			return (object) => {
+				if (!map.has(object)) {
+					map.set(object, ++currentId);
+				}
+				return map.get(object);
+			};
+		})();
+
 		constructor(tag, viewmodel, contents, style, classList, events, args){
 			this.#tag = tag;
-			this.#el = document.createElement(tag);
 			this.#viewmodel = viewmodel;
 			this.contents = contents;
 			this.#style = style;
 			this.#classList = classList;
 			this.#events = events;
 			this.#args = args;
-			this.compose();
+
+			this.id = Component.uniqueIds(this);
+			this.el = document.createElement(tag);
 		}
 
 		/**
@@ -75,15 +116,27 @@ const Euonymus = (function(exports){
 		 */
 		compose(){
 			if(this.contents instanceof string){
-				this.#el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
+				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
 			} else {
-				if(this.#children == null){
-					// 最初の描画の場合は実直に描画を走らせる。
-					this.#el.appendChild(this.contents(this.#viewmodel));
+				if(this.#composed){
+					//TODO 一度でも実行されている場合は再描画。
+					for(const content of this.contents){
+						const {tag, viewmodel, contents, style, classList, events, args} = content;
+						//TODO 前回のcontentと異なる場合は、#childrenの同一と思われる要素と比較して見直す？
+					}
 				} else {
-					//TODO 2回目以降の場合は変更点だけ再描画。どうすんの？
+					// 初実行の場合は全部描画する
+					for(const content of this.contents){
+						const {tag, viewmodel, contents, style, classList, events, args} = content;
+						const component = new Component(tag, viewmodel, contents, style, classList, events, args);
+						component.compose();	//TODO viewmodelがthisになるようにapplyとかで調整すること。
+						this.#children.push(component);
+						this.el.appendChild(component.el);
+					}
 				}
+				
 			}
+			//TODO styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
 		}
 
 		/**
@@ -91,9 +144,9 @@ const Euonymus = (function(exports){
 		 * @param {ParentElement} parent 
 		 */
 		setRoot(root){
-			if(this.#parent == null){
-				this.#parent = parent;
-				parent.append(this.#el);
+			if(this.#parentElement == null){
+				this.#parentElement = parent;
+				parent.append(this.el);
 			} else {
 				console.warn(`Element ${this.#tag} has been already assigned to another parent element.`);
 			}
