@@ -58,13 +58,7 @@ const Euonymus = (function(exports){
 		events = [],
 		args = {}
 	){
-		let obj = null;
-		return (() => {
-			if(obj == null){
-				obj = {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
-			}
-			return obj;
-		})();
+		return {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
 	};
 
 	const Component = class{
