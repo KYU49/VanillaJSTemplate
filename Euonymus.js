@@ -62,12 +62,12 @@ const Euonymus = (function(exports){
 	};
 
 	const Component = class{
-		/** @type {WeakNap} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。内容が同じ別のオブジェクトでないかはparentを確認して、別途チェック */
+		/** @type {WeakNap} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。 */
 		#composed = new WeakMap();
 		/** @type {Element} コンポーネントのroot element */
 		el = null;
 		/** @type {ParentElement | null} 親のDOM element*/
-		#parentElement = null;
+		parentElement = null;
 		/** @type {Component[]} 子コンポーネントのinstance */
 		#children = [];
 		/** @type {string} htmlタグの要素aとかdivとか */
@@ -118,9 +118,15 @@ const Euonymus = (function(exports){
 					const component = new Component(tag, viewmodel, contents, style, classList, events, args);
 					component.compose();	//TODO viewmodelがthisになるようにapplyとかで調整すること。
 					this.#children.push(component);
+					component.parentElement = this.el;
+					// elはこのコンポーネントが描画するためのElementで、その下に子コンポーネントを追加していくことで、viewが形成されていく。
 					this.el.appendChild(component.el);
 				}
 			}
+			
+		}
+		// スタイルの反映。スタイル以外にもidやclassなども。
+		reflectStyle(){
 			//TODO styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
 		}
 		recompose(){
@@ -136,8 +142,8 @@ const Euonymus = (function(exports){
 		 * @param {ParentElement} parent 
 		 */
 		setRoot(root){
-			if(this.#parentElement == null){
-				this.#parentElement = parent;
+			if(this.parentElement == null){
+				this.parentElement = parent;
 				parent.append(this.el);
 			} else {
 				console.warn(`Element ${this.#tag} has been already assigned to another parent element.`);
