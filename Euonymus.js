@@ -43,8 +43,8 @@ const Euonymus = (function(exports){
 	 * 					↓やっぱり、ViewModelはViewModelを継承したclassとして実装させて、依存性注入的にsingletonで生成すべき。
 	 * @param {object} viewmodel { visible: new State(true), fontsize: new State(10), click: (e) => {visible = !visible} }のような形で渡す。
 	 * @param {() => Generator<Component, void, void> | string} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、テンプレートリテラルのように"名前は<b>${vm.name}</b>です。"のような指定も可能。
-	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${vm.fontsize}px"}といった指定も可能。
-	 * @param {[string]} classList classは予約語のため、classList。"${vm.visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
+	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${fontsize}px"}といった指定も可能。
+	 * @param {[string]} classList classは予約語のため、classList。"${visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
 	 * @param {(Event) => void | [(Event) => void]} events eventsを{type: "change", callback: click}の形で指定するか、それを含む配列を指定。
 	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
 	 * @return {object} 2回目以降は再生成しない。vm.fontsizeなどの内部の値は変化するが、渡される変数自体は変化しないため。
@@ -58,18 +58,12 @@ const Euonymus = (function(exports){
 		events = [],
 		args = {}
 	){
-		let obj = null;
-		return (() => {
-			if(obj == null){
-				obj = {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
-			}
-			return obj;
-		})();
+		 return {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
 	};
 
 	const Component = class{
-		/** @type {boolean} componentを描画済みならtrue。trueの場合、値だけ変更して、前回のcomponentを再利用する */
-		#composed = false;
+		/** @type {WeakNap} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。内容が同じ別のオブジェクトでないかはparentを確認して、別途チェック */
+		#composed = new WeakMap();
 		/** @type {Element} コンポーネントのroot element */
 		el = null;
 		/** @type {ParentElement | null} 親のDOM element*/
@@ -80,7 +74,7 @@ const Euonymus = (function(exports){
 		#tag;
 		/** @type {ViewModel} viewmodel。Proxyをwrapした独自classを返すfunctionを入れる？未定 */
 		#viewmodel;
-		
+
 		contents;
 		#style;
 		#classList;
@@ -118,25 +112,23 @@ const Euonymus = (function(exports){
 			if(this.contents instanceof string){
 				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
 			} else {
-				if(this.#composed){
-					//TODO 一度でも実行されている場合は再描画。
-					for(const content of this.contents){
-						const {tag, viewmodel, contents, style, classList, events, args} = content;
-						//TODO 前回のcontentと異なる場合は、#childrenの同一と思われる要素と比較して見直す？
-					}
-				} else {
-					// 初実行の場合は全部描画する
-					for(const content of this.contents){
-						const {tag, viewmodel, contents, style, classList, events, args} = content;
-						const component = new Component(tag, viewmodel, contents, style, classList, events, args);
-						component.compose();	//TODO viewmodelがthisになるようにapplyとかで調整すること。
-						this.#children.push(component);
-						this.el.appendChild(component.el);
-					}
+				// 初実行の場合は全部描画する
+				for(const content of this.contents){
+					const {tag, viewmodel, contents, style, classList, events, args} = content;
+					const component = new Component(tag, viewmodel, contents, style, classList, events, args);
+					component.compose();	//TODO viewmodelがthisになるようにapplyとかで調整すること。
+					this.#children.push(component);
+					this.el.appendChild(component.el);
 				}
-				
 			}
 			//TODO styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
+		}
+		recompose(){
+			//TODO 一度でも実行されている場合は再描画。
+			for(const content of this.contents){
+				const {tag, viewmodel, contents, style, classList, events, args} = content;
+				//TODO 前回のcontentと異なる場合は、#childrenの同一と思われる要素と比較して見直す？
+			}
 		}
 
 		/**
