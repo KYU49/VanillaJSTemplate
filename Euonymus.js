@@ -25,23 +25,49 @@
 
 // 参考 Vue.js: https://unpkg.com/vue@3.0.0/dist/vue.global.js
 const Euonymus = (function(exports){
-	/**
-	 * objectをProxyにして返す役割。！！もしかすると、classにする必要があるかも？初めて値が呼び出される際に、呼び出し元のcomponentを記録し、必要に応じて双方向bindingを設定する必要がある。
-	 * @param {object} viewmodel この中身をProxyにぶち込む
-	 */
-	const ViewModel = function(viewmodel){
-		return new Proxy(viewmodel, {
-			get(target, prop, receiver){
-				//TODO getが走った際に、そのgetを呼び出したオブジェクト(this)の情報を読み取ることはできるか？
+	// 必ず継承して使うこと。
+	const ViewModel = class {
+		/** @type {void} 現在どのjobが実行中かを保存。もしも、任意のpropertyがgetされた場合、obj.xのlistenerにcurrentJobを追加する。 */
+		currentJob = null;
+		constructor() {
+			// Singletonにする。
+			if (!ViewModel.instance){
+				ViewModel.instance = this;
 			}
-		});
+			return ViewModel.instance;
+		}
+		/**
+		 * いわゆるmutableStateOf
+		 * @param {*} initialValue 
+		 * @returns {object} objectで返し、valueを介して値のやり取り。compose以外の関数においては.valueを付けずに使用、compose内ではvalueでアクセスする。
+		 */
+		state = (initialValue) => {
+			return {
+				_value: initialValue,
+				listeners: [],
+				get value(){
+					// currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
+					if(!currentJob in listeners){	// 既に追加済なら再追加の必要はない。
+						listeners.append(currentJob);
+					}
+					return this._value;
+				},
+				set value(newValue){
+					if (this._value != newValue){
+						this._value = newValue;
+						for (job of listeners) {
+							job.recompose();	//TODO currentJobに登録する側にrecompose機能をつけること。
+						}
+					}
+				}
+			};
+		}
 	};
 
 	/**
 	 * メインとなるviewを生成するためのfunction。直接オブジェクトを渡せばいいんだけど、関数定義することで補完が効くようにしている。
 	 * @param {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
-	 * 					↓やっぱり、ViewModelはViewModelを継承したclassとして実装させて、依存性注入的にsingletonで生成すべき。
-	 * @param {object} viewmodel { visible: new State(true), fontsize: new State(10), click: (e) => {visible = !visible} }のような形で渡す。
+	 * @param {ViewModel} viewmodel ViewModelを継承したclassを渡す。
 	 * @param {() => Generator<Component, void, void> | string} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、テンプレートリテラルのように"名前は<b>${vm.name}</b>です。"のような指定も可能。
 	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${fontsize}px"}といった指定も可能。
 	 * @param {[string]} classList classは予約語のため、classList。"${visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
@@ -80,17 +106,6 @@ const Euonymus = (function(exports){
 		#classList;
 		#events;
 		#args;
-		id;
-		static getUniqueId = (() => {
-			let currentId = 0;
-			const map = new WeakMap();
-			return (object) => {
-				if (!map.has(object)) {
-					map.set(object, ++currentId);
-				}
-				return map.get(object);
-			};
-		})();
 
 		constructor(tag, viewmodel, contents, style, classList, events, args){
 			this.#tag = tag;
@@ -101,7 +116,6 @@ const Euonymus = (function(exports){
 			this.#events = events;
 			this.#args = args;
 
-			this.id = Component.uniqueIds(this);
 			this.el = document.createElement(tag);
 		}
 
