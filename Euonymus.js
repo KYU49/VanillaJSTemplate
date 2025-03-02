@@ -120,6 +120,19 @@ const Euonymus = (function(exports){
 		}
 
 		/**
+		 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
+		 */
+		identify(){
+			const str = [this.#tag, this.contents.toString()].join("\n");
+			let hash = 2166136261; // FNV-1a 初期値
+			for (let i = 0; i < str.length; i++) {
+				hash ^= str.charCodeAt(i);
+				hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+			}
+			return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
+		}
+
+		/**
 		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。viewmodelから通知があれば、再度呼ばれる。
 		 */
 		compose(){
