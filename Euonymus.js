@@ -46,7 +46,7 @@ const Euonymus = (function(exports){
 				_value: initialValue,
 				listeners: [],
 				get value(){
-					// currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
+					// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
 					if(!currentJob in listeners){	// 既に追加済なら再追加の必要はない。
 						listeners.append(currentJob);
 					}
@@ -136,10 +136,12 @@ const Euonymus = (function(exports){
 		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。viewmodelから通知があれば、再度呼ばれる。
 		 */
 		compose(){
+			// 先にstyleの設定などを実行
+			this.reflectStyle();
 			if(this.contents instanceof string){
 				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
 			} else {
-				// 初実行の場合は全部描画する
+				// 初実行の場合は全部描画する。this.contentsはfunction*()のため、yieldで返ってきた値を処理
 				for(const content of this.contents){
 					const {tag, viewmodel, contents, style, classList, events, args} = content;
 					const component = new Component(tag, viewmodel, contents, style, classList, events, args);
@@ -150,11 +152,32 @@ const Euonymus = (function(exports){
 					this.el.appendChild(component.el);
 				}
 			}
-			
 		}
-		// スタイルの反映。スタイル以外にもidやclassなども。
+		
+		// styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
+		/** 
+		 * スタイルの反映。スタイル以外にもidやclassなども。
+		 */
 		reflectStyle(){
-			//TODO styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
+
+		}
+		/** 
+		 * classの設定
+		 */
+		refrectClass(){
+
+		}
+		/** 
+		 * クリックイベントなどの設定
+		 */
+		refrectEvent(){
+
+		}
+		/**
+		 * argに記載されている項目の設定。argは複数保存可能なobjectのため、keyが設定されていれば、特定の項目のみを実施。
+		 */
+		refrectArg(key = null){
+
 		}
 		recompose(){
 			//TODO 一度でも実行されている場合は再描画。
