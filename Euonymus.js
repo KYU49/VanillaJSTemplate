@@ -27,7 +27,7 @@
 const Euonymus = (function(exports){
 	// 必ず継承して使うこと。
 	const ViewModel = class {
-		/** @type {void} 現在どのjobが実行中かを保存。もしも、任意のpropertyがgetされた場合、obj.xのlistenerにcurrentJobを追加する。 */
+		/** @type {() => void | null} 現在どのjobが実行中かを保存。もしも、任意のpropertyがgetされた場合、obj.xのlistenerにcurrentJobを追加する。 */
 		currentJob = null;
 		constructor() {
 			// Singletonにする。
@@ -47,7 +47,7 @@ const Euonymus = (function(exports){
 				listeners: [],
 				get value(){
 					// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
-					if(!currentJob in listeners){	// 既に追加済なら再追加の必要はない。
+					if(currentJob && !currentJob in listeners){	// 既に追加済なら再追加の必要はない。
 						listeners.append(currentJob);
 					}
 					return this._value;
@@ -59,7 +59,7 @@ const Euonymus = (function(exports){
 							job.recompose();	//TODO currentJobに登録する側にrecompose機能をつけること。
 						}
 					}
-				}
+				},
 			};
 		}
 	};
@@ -77,7 +77,7 @@ const Euonymus = (function(exports){
 	 */
 	const el = function(
 		tag = "section",
-		viewmodel = {},
+		viewmodel = null,
 		contents = "",
 		style = {},
 		classList = [],
@@ -138,6 +138,9 @@ const Euonymus = (function(exports){
 		compose(){
 			// 先にstyleの設定などを実行
 			this.reflectStyle();
+			this.refrectClass();
+			this.refrectEvent();
+			this.refrectArg();
 			if(this.contents instanceof string){
 				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
 			} else {
@@ -159,25 +162,49 @@ const Euonymus = (function(exports){
 		 * スタイルの反映。スタイル以外にもidやclassなども。
 		 */
 		reflectStyle(){
+			let backup = null;
+			if(this.#viewmodel) {
+				backup = this.#viewmodel.currentJob;
+				this.#viewmodel.currentJob = this.reflectStyle;
+			}
 
+			this.#viewmodel.currentJob = backup;
 		}
 		/** 
 		 * classの設定
 		 */
 		refrectClass(){
+			let backup = null;
+			if(this.#viewmodel) {
+				backup = this.#viewmodel.currentJob;
+				this.#viewmodel.currentJob = this.refrectClass;
+			}
 
+			this.#viewmodel.currentJob = backup;
 		}
 		/** 
 		 * クリックイベントなどの設定
 		 */
 		refrectEvent(){
+			let backup = null;
+			if(this.#viewmodel) {
+				backup = this.#viewmodel.currentJob;
+				this.#viewmodel.currentJob = this.refrectEvent;
+			}
 
+			this.#viewmodel.currentJob = backup;
 		}
 		/**
 		 * argに記載されている項目の設定。argは複数保存可能なobjectのため、keyが設定されていれば、特定の項目のみを実施。
 		 */
 		refrectArg(key = null){
+			let backup = null;
+			if(this.#viewmodel) {
+				backup = this.#viewmodel.currentJob;
+				this.#viewmodel.currentJob = this.refrectArg;
+			}
 
+			this.#viewmodel.currentJob = backup;
 		}
 		recompose(){
 			//TODO 一度でも実行されている場合は再描画。
@@ -212,7 +239,7 @@ const Euonymus = (function(exports){
 	 * @returns {string}
 	 */
 	const templateLiteral = (originalText, viewmodel) => {
-		return escapedText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel[key.trim()] || "").replace(/\$\$\{/g, "${");
+		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel[key.trim()].value || "").replace(/\$\$\{/g, "${");
 	}
 
 "aaa${test}aaa"
