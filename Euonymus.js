@@ -24,7 +24,7 @@
 
 
 // 参考 Vue.js: https://unpkg.com/vue@3.0.0/dist/vue.global.js
-const Euonymus = (function(exports){
+export const Euonymus = (function(exports){
 	
 	/**
 	 * State classを返すだけ。
@@ -39,9 +39,26 @@ const Euonymus = (function(exports){
 	 * @param {any} initialValue 
 	 */
 	const State = class {
+		/**
+		 * @typedef {Object} Job
+		 * @property {function} func
+		 * @property {Component} comp 
+		 */
+		/** @type {Job[]} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。 */
 		listeners = [];
 		constructor(initialValue){
 			this.value = initialValue;
+		}
+		get value(){
+			return this._value;
+		}
+		set value(newValue){
+			if (this._value != newValue){
+				this._value = newValue;
+				for (const job of this.listeners) {	// 一度でも呼び出されたことがあるものを全て実行
+					job.func.apply(job.comp);
+				}
+			}
 		}
 	}
 	// 必ず継承して使うこと。
@@ -59,31 +76,33 @@ const Euonymus = (function(exports){
 		 * @param {() => void} callerFunction 呼び出し元のreflect関数 or compose関数。
 		 * @returns {() => *} 
 		 */
-		accessorWithListener = (callerFunction) => {
+		accessorWithListener = function(callerFunction = null, callerComponents = null) {
 			const caller = callerFunction;
-			const self = ViewModel.instance;
+			const components = callerComponents;
+			const self = this;
 			return new Proxy({}, {
 				get: (target, prop, reveiver) => {
-					if(prop in self && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
+					if(self[prop] && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
 						// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
-						if(caller && !caller in self[prop].listeners){	// 既に追加済なら再追加の必要はない。
-							self[prop].listeners.append(caller);
+						if(caller && !self[prop].listeners.some(obj => obj.func.toString() == caller.toString() && obj.comp.toString() == components.toString())
+						){	// 既に追加済なら再追加の必要はない。
+							self[prop].listeners.push({func: caller, comp: components});
 						}
 						return self[prop].value;
 					}
-					console.error(`There is not State, ${prop} in ViewModel.`);
+					console.error(`There is no State named "${prop}" in ViewModel.`);
 					return undefined;
 				},
 				set: (target, prop, newValue, receiver) => {
-					if(prop in self && self[prop] instanceof State) {
-						if (self[prop].value != newValue){
-							self[prop].value = newValue;
-							for (job of listeners) {	// 一度でも呼び出されたことがあるものを全て実行
-								job.call();
-							}
+					if(self[prop] && self[prop] instanceof State) {
+						self[prop].value = newValue;
+					} else {
+						if(newValue instanceof State){
+							self.prop.value = newValue;
+						} else {
+							self.prop = new State(newValue);
 						}
 					}
-					console.error(`There is not State, ${prop} in ViewModel.`);
 				}
 			});
 		};
@@ -92,24 +111,39 @@ const Euonymus = (function(exports){
 	/**
 	 * メインとなるviewを生成するためのfunction。直接オブジェクトを渡せばいいんだけど、関数定義することで補完が効くようにしている。
 	 * @param {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
-	 * @param {ViewModel} viewmodel ViewModelを継承したclassを渡す。
-	 * @param {() => Generator<Component, void, void> | string} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、テンプレートリテラルのように"名前は<b>${vm.name}</b>です。"のような指定も可能。
-	 * @param {object} style {display: "block"}のように指定可能。ただし、"10px"などを含む文字列の場合は""で括る必要がある。右辺にはstateも利用でき、{size: "${fontsize}px"}といった指定も可能。
-	 * @param {[string]} classList classは予約語のため、classList。"${visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
-	 * @param {(Event) => void | [(Event) => void]} events eventsを{type: "change", callback: click}の形で指定するか、それを含む配列を指定。
+	 * @param {ViewModel} viewmodel ViewModelを継承したclassをinstance化して渡す。
+	 * @param {() => Generator<Component, void, void> | string | () => string | null} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
+	 * @param {object} style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
+	 * @param {[string | () => string]} classList classは予約語のため、classList。
+	 * @param {[(Event) => void]} events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
+	 * @param {State} value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
 	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
+	 * @param {Element} 最初の1つ目の生成でのみ使用。どのオブジェクトの下に配置するかを指定。
 	 * @return {object} 2回目以降は再生成しない。vm.fontsizeなどの内部の値は変化するが、渡される変数自体は変化しないため。
 	 */
-	const el = function(
+	const el = function({
 		tag = "section",
 		viewmodel = null,
-		contents = "",
+		contents = null,
 		style = {},
 		classList = [],
 		events = [],
+		value = null,
 		args = {}
-	){
-		 return {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
+	}){
+		// viewmodelがなかったら、継承なしのViewModelをglobal viewmodelとして渡す。
+		if(!viewmodel){
+			viewmodel = new ViewModel();
+		}
+		 return {
+			tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, value: value, args: args,
+			setParent: (root) => {
+				const component = new Component(tag, viewmodel, contents, style, classList, events, value, args);
+				component.parentElement = root;
+				root.appendChild(component.el);
+				return component;
+			}
+		};
 	};
 
 	const Component = class{
@@ -123,25 +157,36 @@ const Euonymus = (function(exports){
 		#children = [];
 		/** @type {string} htmlタグの要素aとかdivとか */
 		#tag;
-		/** @type {ViewModel} viewmodel。Proxyをwrapした独自classを返すfunctionを入れる？未定 */
+		/** @type {ViewModel} viewmodel。instance化せずに渡す */
 		#viewmodel;
+		/** @type {State} inputの場合のattribute valueの中身 */
+		inputValue = null;
 
 		contents;
 		#style;
 		#classList;
-		#events;
-		#args;
+		events;
+		args;
 
-		constructor(tag, viewmodel, contents, style, classList, events, args){
+		constructor(tag, viewmodel, contents, style, classList, events, value, args){
 			this.#tag = tag;
 			this.#viewmodel = viewmodel;
 			this.contents = contents;
 			this.#style = style;
 			this.#classList = classList;
-			this.#events = events;
-			this.#args = args;
+			this.events = events;
+			this.inputValue = value;
+			this.args = args;
 
 			this.el = document.createElement(tag);
+
+			// 先にstyleの設定などを実行
+			this.reflectArg.apply(this.#viewmodel.accessorWithListener(this.reflectArg, this), [this]);
+			this.reflectStyle.apply(this.#viewmodel.accessorWithListener(this.reflectStyle, this), [this]);
+			this.reflectClass.apply(this.#viewmodel.accessorWithListener(this.reflectClass, this), [this]);
+			this.reflectValue();	// valueにはStateが直接入り、bindingされる必要があるため、accessorWithListenerは不要。
+			this.reflectEvent.apply(this.#viewmodel.accessorWithListener(this.reflectEvent, this), [this]);
+			this.compose();
 		}
 
 		/**
@@ -160,24 +205,23 @@ const Euonymus = (function(exports){
 		/**
 		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。viewmodelから通知があれば、再度呼ばれる。
 		 */
-		compose(){
-			// 先にstyleの設定などを実行
-			this.reflectStyle.apply(this.#viewmodel.accessorWithListener(this.reflectStyle));
-			this.reflectClass.apply(this.#viewmodel.accessorWithListener(this.reflectClass));
-			this.reflectEvent.apply(this.#viewmodel.accessorWithListener(this.reflectEvent));
-			this.reflectArg.apply(this.#viewmodel.accessorWithListener(this.reflectArg));
-			if(this.contents instanceof string){
-				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
+		compose(self = this){
+			if(!self.contents){
+				return;
+			}
+			// contents部分を生成。GeneratorFunction以外ならstring化してinnerHTMLに、GeneratorFunctionなら実行。
+			const variableType = Object.prototype.toString.call(self.contents);
+			if(variableType == "[object String]" || variableType == "[object Function]"){
+				let html = self.contents;
+				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
+					html = html.apply(self.#viewmodel.accessorWithListener(self.compose, self), [self]);
+				}
+				self.el.innerHTML = html;
 			} else {
-				// 初実行の場合は全部描画する。this.contentsはfunction*()のため、yieldで返ってきた値を処理
-				for(const content of this.contents){
-					const {tag, viewmodel, contents, style, classList, events, args} = content;
-					const component = new Component(tag, viewmodel, contents, style, classList, events, args);
-					component.compose();
-					this.#children.push(component);
-					component.parentElement = this.el;
-					// elはこのコンポーネントが描画するためのElementで、その下に子コンポーネントを追加していくことで、viewが形成されていく。
-					this.el.appendChild(component.el);
+				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
+				for(const content of self.contents()){
+					const component = content.setParent(self.el);
+					self.#children.push(component);
 				}
 			}
 		}
@@ -185,23 +229,72 @@ const Euonymus = (function(exports){
 		// styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
 		/** 
 		 * スタイルの反映。スタイル以外にもidやclassなども。
+		 * @param {ViewModel} self
 		 */
-		reflectStyle(){
+		reflectStyle(self = this){
 		}
 		/** 
 		 * classの設定
+		 * @param {ViewModel} self
 		 */
-		reflectClass(){
+		reflectClass(self = this){
 		}
 		/** 
 		 * クリックイベントなどの設定
+		 * @param {ViewModel} self
 		 */
-		reflectEvent(){
+		reflectEvent(self = this){
+		}
+
+		/** 
+		 * inputの場合のvalue attribute。リスナーの設定も行う。Stateが入っているため、accessorWithListenerは呼ばない。
+		 * @param {ViewModel} self
+		 */
+		reflectValue(self = this){
+			if(self.inputValue){
+				self.el.value = self.inputValue.value;
+				if(!self.args){
+					return;
+				}
+				if(!self.args.type){
+					self.args.type = "text";
+				}
+				// checkedとhiddenが書き換わるなどあり得るため、念の為関数実行もしておく。
+				switch(
+					typeof self.args.type == "string" ? self.args.type : self.args.apply(self.#viewmodel.accessorWithListener(self.reflectValue, self), [self])
+				){
+					case undefined:
+					case "button":
+					case "hidden":
+					case "image":
+					case "submit":
+						break;
+					case "checkbox":
+						{
+							const callback = function(e){
+								self.inputValue.value = self.el.checked;
+							};
+							self.addEventListener("change", callback);
+						}
+						break;
+					default:
+						{
+							const callback = function(e){
+								self.inputValue.value = self.el.value;
+							};
+							self.addEventListener("input", callback);
+						}
+						break;
+				}
+			}
 		}
 		/**
 		 * argに記載されている項目の設定。
 		 */
-		reflectArg(){
+		reflectArg(self){
+			for(const prop in self.args){
+				self.el.setAttribute(prop, self.args[prop]);
+			}
 		}
 		recompose(){
 			//TODO 一度でも実行されている場合は再描画。
@@ -212,15 +305,15 @@ const Euonymus = (function(exports){
 		}
 
 		/**
-		 * どのDOM elementの下にこのComponent elementを置くか？
-		 * @param {ParentElement} parent 
+		 * reflectEventsと別で、単発でEventを追加したい場合。例えば、inputの値が変更された際のcallback登録など。
+		 * @param {string} type "change"や"input"など。
+		 * @param {(e) => void} callback
 		 */
-		setRoot(root){
-			if(this.parentElement == null){
-				this.parentElement = parent;
-				parent.append(this.el);
-			} else {
-				console.warn(`Element ${this.#tag} has been already assigned to another parent element.`);
+		addEventListener(type, callback){
+			// Eventlistenerが設定されていなかったら追加
+			if(!this.events.some(obj => obj.type == type && obj.callback.toString() == callback.toString())){
+				this.events.push({type: type, callback: callback});
+				this.el.addEventListener(type, (e) => callback(e));
 			}
 		}
 	}
@@ -228,17 +321,6 @@ const Euonymus = (function(exports){
 	const Column = function(){
 
 	};
-
-	/**
-	 * テンプレートリテラル様に書かれた文字列を展開する。
-	 * @param {string} originalText 置き換えたいテキスト。"My name is ${name}."のように記載(`を使わないこと)。"${"と記載したい場合は"$${"でエスケープされる。
-	 * @param {object} viewmodel 置き換えたいテキストの置き換え先を格納したobject。nameを置換したければ、viewmodel = {name: "MyName"}と記載。
-	 * @param {() => void} caller 呼び出し元の関数。
-	 * @returns {string}
-	 */
-	const templateLiteral = (originalText, viewmodel, caller) => {
-		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel.accessorWithListener(caller)[key.trim()].value || "").replace(/\$\$\{/g, "${");
-	}
 	
 	exports.el = el;
 	exports.State = State;
