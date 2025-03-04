@@ -1,12 +1,12 @@
 import { Euonymus } from "./Euonymus.js";
 
 (function(){
-    const TestVm = class extends Euonymus.ViewModel{
-        text = Euonymus.state("test");
-    };
-    const testVm = new TestVm();
     // ロード時にオブジェクトだけ作成
     window.onload = function () {
+        const TestVm = class extends Euonymus.ViewModel{
+            text = Euonymus.state("test");
+        };
+        const testVm = new TestVm();
         const container = document.getElementById("container");
         const component = Euonymus.el({
             tag: "div",

@@ -46,13 +46,15 @@ export const Euonymus = (function(exports){
 		 */
 		/** @type {Job[]} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。 */
 		listeners = [];
-		value = null;
 		constructor(initialValue){
 			this.value = initialValue;
 		}
 		get value(){
 			return this._value;
 		}
+		/**
+		 * @param {any} newValue
+		 */
 		set value(newValue){
 			if (this._value != newValue){
 				this._value = newValue;
@@ -171,7 +173,7 @@ export const Euonymus = (function(exports){
 
 		constructor(tag, viewmodel, contents, style, classList, events, value, args){
 			this.#tag = tag;
-			this.#viewmodel = new viewmodel();
+			this.#viewmodel = viewmodel;
 			this.contents = contents;
 			this.#style = style;
 			this.#classList = classList;
