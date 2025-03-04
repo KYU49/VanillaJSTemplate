@@ -25,10 +25,27 @@
 
 // 参考 Vue.js: https://unpkg.com/vue@3.0.0/dist/vue.global.js
 const Euonymus = (function(exports){
+	
+	/**
+	 * State classを返すだけ。
+	 * @param {any} initialValue 
+	 * @returns {State}
+	 */
+	function state(initialValue){
+		return new State(initialValue);
+	}
+	/**
+	 * KotlinでいうところのmutableState。ViewModel内でのみ使用可能。getterやsetterはViewModel内で実装する。
+	 * @param {any} initialValue 
+	 */
+	const State = class {
+		listeners = [];
+		constructor(initialValue){
+			this.value = initialValue;
+		}
+	}
 	// 必ず継承して使うこと。
 	const ViewModel = class {
-		/** @type {() => void | null} 現在どのjobが実行中かを保存。もしも、任意のpropertyがgetされた場合、obj.xのlistenerにcurrentJobを追加する。 */
-		currentJob = null;
 		constructor() {
 			// Singletonにする。
 			if (!ViewModel.instance){
@@ -36,32 +53,40 @@ const Euonymus = (function(exports){
 			}
 			return ViewModel.instance;
 		}
+
 		/**
-		 * いわゆるmutableStateOf
-		 * @param {*} initialValue 
-		 * @returns {object} objectで返し、valueを介して値のやり取り。compose以外の関数においては.valueを付けずに使用、compose内ではvalueでアクセスする。
+		 * reflectXXX.apply(accessorWithListener(this.reflectXXX))という形で呼び出すことで、Stateに呼び出し元を登録できる。
+		 * @param {() => void} callerFunction 呼び出し元のreflect関数 or compose関数。
+		 * @returns {() => *} 
 		 */
-		state = (initialValue) => {
-			return {
-				_value: initialValue,
-				listeners: [],
-				get value(){
-					// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
-					if(currentJob && !currentJob in listeners){	// 既に追加済なら再追加の必要はない。
-						listeners.append(currentJob);
+		accessorWithListener = (callerFunction) => {
+			const caller = callerFunction;
+			const self = ViewModel.instance;
+			return new Proxy({}, {
+				get: (target, prop, reveiver) => {
+					if(prop in self && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
+						// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
+						if(caller && !caller in self[prop].listeners){	// 既に追加済なら再追加の必要はない。
+							self[prop].listeners.append(caller);
+						}
+						return self[prop].value;
 					}
-					return this._value;
+					console.error(`There is not State, ${prop} in ViewModel.`);
+					return undefined;
 				},
-				set value(newValue){
-					if (this._value != newValue){
-						this._value = newValue;
-						for (job of listeners) {
-							job.recompose();	//TODO currentJobに登録する側にrecompose機能をつけること。
+				set: (target, prop, newValue, receiver) => {
+					if(prop in self && self[prop] instanceof State) {
+						if (self[prop].value != newValue){
+							self[prop].value = newValue;
+							for (job of listeners) {	// 一度でも呼び出されたことがあるものを全て実行
+								job.call();
+							}
 						}
 					}
-				},
-			};
-		}
+					console.error(`There is not State, ${prop} in ViewModel.`);
+				}
+			});
+		};
 	};
 
 	/**
@@ -137,10 +162,10 @@ const Euonymus = (function(exports){
 		 */
 		compose(){
 			// 先にstyleの設定などを実行
-			this.reflectStyle();
-			this.refrectClass();
-			this.refrectEvent();
-			this.refrectArg();
+			this.reflectStyle.apply(this.#viewmodel.accessorWithListener(this.reflectStyle));
+			this.reflectClass.apply(this.#viewmodel.accessorWithListener(this.reflectClass));
+			this.reflectEvent.apply(this.#viewmodel.accessorWithListener(this.reflectEvent));
+			this.reflectArg.apply(this.#viewmodel.accessorWithListener(this.reflectArg));
 			if(this.contents instanceof string){
 				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
 			} else {
@@ -148,7 +173,7 @@ const Euonymus = (function(exports){
 				for(const content of this.contents){
 					const {tag, viewmodel, contents, style, classList, events, args} = content;
 					const component = new Component(tag, viewmodel, contents, style, classList, events, args);
-					component.compose();	//TODO viewmodelがthisになるようにapplyとかで調整すること。
+					component.compose();
 					this.#children.push(component);
 					component.parentElement = this.el;
 					// elはこのコンポーネントが描画するためのElementで、その下に子コンポーネントを追加していくことで、viewが形成されていく。
@@ -162,49 +187,21 @@ const Euonymus = (function(exports){
 		 * スタイルの反映。スタイル以外にもidやclassなども。
 		 */
 		reflectStyle(){
-			let backup = null;
-			if(this.#viewmodel) {
-				backup = this.#viewmodel.currentJob;
-				this.#viewmodel.currentJob = this.reflectStyle;
-			}
-
-			this.#viewmodel.currentJob = backup;
 		}
 		/** 
 		 * classの設定
 		 */
-		refrectClass(){
-			let backup = null;
-			if(this.#viewmodel) {
-				backup = this.#viewmodel.currentJob;
-				this.#viewmodel.currentJob = this.refrectClass;
-			}
-
-			this.#viewmodel.currentJob = backup;
+		reflectClass(){
 		}
 		/** 
 		 * クリックイベントなどの設定
 		 */
-		refrectEvent(){
-			let backup = null;
-			if(this.#viewmodel) {
-				backup = this.#viewmodel.currentJob;
-				this.#viewmodel.currentJob = this.refrectEvent;
-			}
-
-			this.#viewmodel.currentJob = backup;
+		reflectEvent(){
 		}
 		/**
-		 * argに記載されている項目の設定。argは複数保存可能なobjectのため、keyが設定されていれば、特定の項目のみを実施。
+		 * argに記載されている項目の設定。
 		 */
-		refrectArg(key = null){
-			let backup = null;
-			if(this.#viewmodel) {
-				backup = this.#viewmodel.currentJob;
-				this.#viewmodel.currentJob = this.refrectArg;
-			}
-
-			this.#viewmodel.currentJob = backup;
+		reflectArg(){
 		}
 		recompose(){
 			//TODO 一度でも実行されている場合は再描画。
@@ -236,15 +233,16 @@ const Euonymus = (function(exports){
 	 * テンプレートリテラル様に書かれた文字列を展開する。
 	 * @param {string} originalText 置き換えたいテキスト。"My name is ${name}."のように記載(`を使わないこと)。"${"と記載したい場合は"$${"でエスケープされる。
 	 * @param {object} viewmodel 置き換えたいテキストの置き換え先を格納したobject。nameを置換したければ、viewmodel = {name: "MyName"}と記載。
+	 * @param {() => void} caller 呼び出し元の関数。
 	 * @returns {string}
 	 */
-	const templateLiteral = (originalText, viewmodel) => {
-		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel[key.trim()].value || "").replace(/\$\$\{/g, "${");
+	const templateLiteral = (originalText, viewmodel, caller) => {
+		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel.accessorWithListener(caller)[key.trim()].value || "").replace(/\$\$\{/g, "${");
 	}
-
-"aaa${test}aaa"
-
 	
 	exports.el = el;
+	exports.State = State;
+	exports.state = state;
+	exports.ViewModel = ViewModel;
 	return exports;
 }({}));
