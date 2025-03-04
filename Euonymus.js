@@ -24,7 +24,7 @@
 
 
 // 参考 Vue.js: https://unpkg.com/vue@3.0.0/dist/vue.global.js
-const Euonymus = (function(exports){
+export const Euonymus = (function(exports){
 	
 	/**
 	 * State classを返すだけ。
@@ -40,6 +40,7 @@ const Euonymus = (function(exports){
 	 */
 	const State = class {
 		listeners = [];
+		value = null;
 		constructor(initialValue){
 			this.value = initialValue;
 		}
@@ -61,29 +62,34 @@ const Euonymus = (function(exports){
 		 */
 		accessorWithListener = (callerFunction) => {
 			const caller = callerFunction;
-			const self = ViewModel.instance;
+			const self = this;
 			return new Proxy({}, {
 				get: (target, prop, reveiver) => {
-					if(prop in self && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
+					if(self[prop] && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
 						// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
 						if(caller && !caller in self[prop].listeners){	// 既に追加済なら再追加の必要はない。
 							self[prop].listeners.append(caller);
 						}
 						return self[prop].value;
 					}
-					console.error(`There is not State, ${prop} in ViewModel.`);
+					console.error(`There is no State named "${prop}" in ViewModel.`);
 					return undefined;
 				},
 				set: (target, prop, newValue, receiver) => {
-					if(prop in self && self[prop] instanceof State) {
+					if(self[prop] && self[prop] instanceof State) {
 						if (self[prop].value != newValue){
 							self[prop].value = newValue;
 							for (job of listeners) {	// 一度でも呼び出されたことがあるものを全て実行
 								job.call();
 							}
 						}
+					} else {
+						if(newValue instanceof State){
+							self.prop.value = newValue;
+						} else {
+							self.prop = new State(newValue);
+						}
 					}
-					console.error(`There is not State, ${prop} in ViewModel.`);
 				}
 			});
 		};
@@ -98,18 +104,27 @@ const Euonymus = (function(exports){
 	 * @param {[string]} classList classは予約語のため、classList。"${visible} ? 'visible' : 'hidden'"のような設定をすることも可能。
 	 * @param {(Event) => void | [(Event) => void]} events eventsを{type: "change", callback: click}の形で指定するか、それを含む配列を指定。
 	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
+	 * @param {Element} 最初の1つ目の生成でのみ使用。どのオブジェクトの下に配置するかを指定。
 	 * @return {object} 2回目以降は再生成しない。vm.fontsizeなどの内部の値は変化するが、渡される変数自体は変化しないため。
 	 */
-	const el = function(
+	const el = function({
 		tag = "section",
-		viewmodel = null,
+		viewmodel = ViewModel,
 		contents = "",
 		style = {},
 		classList = [],
 		events = [],
 		args = {}
-	){
-		 return {tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args};
+	}){
+		 return {
+			tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, args: args,
+			setParent: (root) => {
+				const component = new Component(tag, viewmodel, contents, style, classList, events, args);
+				component.parentElement = root;
+				component.compose();
+				root.appendChild(component.el);
+			}
+		};
 	};
 
 	const Component = class{
@@ -123,7 +138,7 @@ const Euonymus = (function(exports){
 		#children = [];
 		/** @type {string} htmlタグの要素aとかdivとか */
 		#tag;
-		/** @type {ViewModel} viewmodel。Proxyをwrapした独自classを返すfunctionを入れる？未定 */
+		/** @type {ViewModel} viewmodel。instance化せずに渡す */
 		#viewmodel;
 
 		contents;
@@ -134,7 +149,7 @@ const Euonymus = (function(exports){
 
 		constructor(tag, viewmodel, contents, style, classList, events, args){
 			this.#tag = tag;
-			this.#viewmodel = viewmodel;
+			this.#viewmodel = new viewmodel();
 			this.contents = contents;
 			this.#style = style;
 			this.#classList = classList;
@@ -166,8 +181,8 @@ const Euonymus = (function(exports){
 			this.reflectClass.apply(this.#viewmodel.accessorWithListener(this.reflectClass));
 			this.reflectEvent.apply(this.#viewmodel.accessorWithListener(this.reflectEvent));
 			this.reflectArg.apply(this.#viewmodel.accessorWithListener(this.reflectArg));
-			if(this.contents instanceof string){
-				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel);
+			if(typeof this.contents == "string"){
+				this.el.innerHTML = templateLiteral(this.contents, this.#viewmodel, this.compose);
 			} else {
 				// 初実行の場合は全部描画する。this.contentsはfunction*()のため、yieldで返ってきた値を処理
 				for(const content of this.contents){
@@ -236,8 +251,8 @@ const Euonymus = (function(exports){
 	 * @param {() => void} caller 呼び出し元の関数。
 	 * @returns {string}
 	 */
-	const templateLiteral = (originalText, viewmodel, caller) => {
-		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel.accessorWithListener(caller)[key.trim()].value || "").replace(/\$\$\{/g, "${");
+	const templateLiteral = function(originalText, viewmodel) {
+		return originalText.replace(/(?<!\$)\$\{(.*?)\}/g, (_, key) => viewmodel[key.trim()].value || "").replace(/\$\$\{/g, "${");
 	}
 	
 	exports.el = el;
