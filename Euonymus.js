@@ -115,7 +115,7 @@ export const Euonymus = (function(exports){
 	/**
 	 * @typedef { Object } EventObj
 	 * @property { string } type "change"や"input"や"click"など。
-	 * @property { (Event) => void } listener いつもの(e) => {}
+	 * @property { (Event) => void } listener addEventListenerのlistenerに相当。
 	 */
 	/**
 	 * @typedef { Object } elObj
