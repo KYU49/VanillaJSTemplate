@@ -113,15 +113,20 @@ export const Euonymus = (function(exports){
 	};
 
 	/**
-	 * @typedef {Object} elObj
-	 * @property {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
-	 * @property {ViewModel} viewmodel ViewModelを継承したclassをinstance化して渡す。
-	 * @property {() => Generator<elObj, void, void> | string | () => string | null} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
-	 * @property {object} style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
+	 * @typedef { Object } EventObj
+	 * @property { string } type "change"や"input"や"click"など。
+	 * @property { (Event) => void } listener いつもの(e) => {}
+	 */
+	/**
+	 * @typedef { Object } elObj
+	 * @property { string } tag aやらdivやらspanやら。viewmodelを使った指定不可。
+	 * @property { ViewModel | null } viewmodel ViewModelを継承したclassをinstance化して渡す。
+	 * @property { () => Generator<elObj, void, void> | string | () => string | null } contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
+	 * @property { object } style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
 	 * @property { string[] | object } classList classは予約語のため、classList。入れるclassのリストか、{class名: boolean}のオブジェクト。
-	 * @property { ((Event) => void)[] } events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
-	 * @property {State} value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
-	 * @property {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
+	 * @property { EventObj[] } events eventsを{type: "change", listener: click}の形で指定する。それを含む配列で指定。
+	 * @property { State } value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
+	 * @property { object } args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
 	 */
 	/**
 	 * メインとなるviewを生成するためのfunction。直接オブジェクトを渡せばいいんだけど、関数定義することで補完が効くようにしている。
