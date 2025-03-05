@@ -59,7 +59,7 @@ export const Euonymus = (function(exports){
 			if (this._value != newValue){
 				this._value = newValue;
 				for (const job of this.listeners) {	// 一度でも呼び出されたことがあるものを全て実行
-					job.func.apply(job.comp);
+					job.func(job.comp);
 				}
 			}
 		}
@@ -75,9 +75,10 @@ export const Euonymus = (function(exports){
 		}
 
 		/**
-		 * reflectXXX.apply(accessorWithListener(this.reflectXXX))という形で呼び出すことで、Stateに呼び出し元を登録できる。
-		 * @param {() => void} callerFunction 呼び出し元のreflect関数 or compose関数。
-		 * @returns {() => *} 
+		 * Proxy.xで、このviewmodelのStateにアクセスでき、この中でgetterが呼ばれると、recomposeリストに自動追加される。
+		 * @param {() => void} callerFunction 呼び出し元のreflect関数 or compose関数など。
+		 * @param {Component} callerComponents  
+		 * @returns {Proxy} 
 		 */
 		accessorWithListener = function(callerFunction = null, callerComponents = null) {
 			const caller = callerFunction;
@@ -117,8 +118,8 @@ export const Euonymus = (function(exports){
 	 * @param {ViewModel} viewmodel ViewModelを継承したclassをinstance化して渡す。
 	 * @param {() => Generator<Component, void, void> | string | () => string | null} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
 	 * @param {object} style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
-	 * @param {[string | () => string]} classList classは予約語のため、classList。
-	 * @param {[(Event) => void]} events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
+	 * @param { string[] | object } classList classは予約語のため、classList。入れるclassのリストか、{class名: boolean}のオブジェクト。
+	 * @param { ((Event) => void)[] } events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
 	 * @param {State} value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
 	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
 	 * @param {Element} 最初の1つ目の生成でのみ使用。どのオブジェクトの下に配置するかを指定。
@@ -160,7 +161,7 @@ export const Euonymus = (function(exports){
 		#children = [];
 		/** @type {string} htmlタグの要素aとかdivとか */
 		#tag;
-		/** @type {ViewModel} viewmodel。instance化せずに渡す */
+		/** @type {ViewModel} viewmodel。instance化して渡す */
 		#viewmodel;
 		/** @type {State} inputの場合のattribute valueの中身 */
 		inputValue = null;
@@ -184,11 +185,11 @@ export const Euonymus = (function(exports){
 			this.el = document.createElement(tag);
 
 			// 先にstyleの設定などを実行
-			this.reflectArg.apply(this.#viewmodel.accessorWithListener(this.reflectArg, this), [this]);
-			this.reflectStyle.apply(this.#viewmodel.accessorWithListener(this.reflectStyle, this), [this]);
-			this.reflectClass.apply(this.#viewmodel.accessorWithListener(this.reflectClass, this), [this]);
+			this.reflectArg();
+			this.reflectStyle();
+			this.reflectClass();
 			this.reflectValue();	// valueにはStateが直接入り、bindingされる必要があるため、accessorWithListenerは不要。
-			this.reflectEvent.apply(this.#viewmodel.accessorWithListener(this.reflectEvent, this), [this]);
+			this.reflectEvent();
 			this.compose();
 		}
 
@@ -207,6 +208,7 @@ export const Euonymus = (function(exports){
 
 		/**
 		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。viewmodelから通知があれば、再度呼ばれる。
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
 		compose(self = this){
 			if(!self.contents){
@@ -217,12 +219,12 @@ export const Euonymus = (function(exports){
 			if(variableType == "[object String]" || variableType == "[object Function]"){
 				let html = self.contents;
 				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
-					html = html.apply(self.#viewmodel.accessorWithListener(self.compose, self), [self]);
+					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
 				}
 				self.el.innerHTML = html;
 			} else {
 				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
-				for(const content of self.contents()){
+				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
 					const component = content.setParent(self.el);
 					self.#children.push(component);
 				}
@@ -232,26 +234,25 @@ export const Euonymus = (function(exports){
 		// styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
 		/** 
 		 * スタイルの反映。スタイル以外にもidやclassなども。
-		 * @param {ViewModel} self
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
 		reflectStyle(self = this){
 		}
 		/** 
-		 * classの設定
-		 * @param {ViewModel} self
+		 * classの設定, {enabled: viewmodel.isEnabled, hide: false}という形式と、["enabled"]という形式のどちらか。
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
 		reflectClass(self = this){
 		}
 		/** 
 		 * クリックイベントなどの設定
-		 * @param {ViewModel} self
 		 */
 		reflectEvent(self = this){
 		}
 
 		/** 
 		 * inputの場合のvalue attribute。リスナーの設定も行う。Stateが入っているため、accessorWithListenerは呼ばない。
-		 * @param {ViewModel} self
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
 		reflectValue(self = this){
 			if(self.inputValue){
@@ -264,7 +265,7 @@ export const Euonymus = (function(exports){
 				}
 				// checkedとhiddenが書き換わるなどあり得るため、念の為関数実行もしておく。
 				switch(
-					typeof self.args.type == "string" ? self.args.type : self.args.apply(self.#viewmodel.accessorWithListener(self.reflectValue, self), [self])
+					typeof self.args.type == "string" ? self.args.type : self.args(self.#viewmodel.accessorWithListener(self.reflectValue, self))
 				){
 					case undefined:
 					case "button":
@@ -293,17 +294,38 @@ export const Euonymus = (function(exports){
 		}
 		/**
 		 * argに記載されている項目の設定。
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
-		reflectArg(self){
-			for(const prop in self.args){
-				self.el.setAttribute(prop, self.args[prop]);
+		reflectArg(self = this){
+			for(const prop in this.args){
+				this.el.setAttribute(prop, this.args[prop]);
 			}
 		}
-		recompose(){
-			//TODO 一度でも実行されている場合は再描画。
-			for(const content of this.contents){
-				const {tag, viewmodel, contents, style, classList, events, args} = content;
-				//TODO 前回のcontentと異なる場合は、#childrenの同一と思われる要素と比較して見直す？
+		/**
+		 * recomposeの場合は変更点のみ再描画
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
+		 */
+		recompose(self = this){			
+			if(!self.contents){
+				return;
+			}
+			// contents部分を生成。GeneratorFunction以外ならstring化してinnerHTMLに、GeneratorFunctionなら実行。
+			const variableType = Object.prototype.toString.call(self.contents);
+			if(variableType == "[object String]" || variableType == "[object Function]"){
+				let html = self.contents;
+				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
+					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
+				}
+				self.el.innerHTML = html;
+			} else {
+				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
+
+				//TODO 再描画の際は、前回のelementを再利用
+				
+				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
+					const component = content.setParent(self.el);
+					self.#children.push(component);
+				}
 			}
 		}
 
@@ -316,7 +338,7 @@ export const Euonymus = (function(exports){
 			// Eventlistenerが設定されていなかったら追加
 			if(!this.events.some(obj => obj.type == type && obj.callback.toString() == callback.toString())){
 				this.events.push({type: type, callback: callback});
-				this.el.addEventListener(type, (e) => callback(e));
+				this.el.addEventListener(type, (e) => {callback(e)});
 			}
 		}
 	}
