@@ -113,17 +113,19 @@ export const Euonymus = (function(exports){
 	};
 
 	/**
+	 * @typedef {Object} elObj
+	 * @property {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
+	 * @property {ViewModel} viewmodel ViewModelを継承したclassをinstance化して渡す。
+	 * @property {() => Generator<elObj, void, void> | string | () => string | null} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
+	 * @property {object} style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
+	 * @property { string[] | object } classList classは予約語のため、classList。入れるclassのリストか、{class名: boolean}のオブジェクト。
+	 * @property { ((Event) => void)[] } events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
+	 * @property {State} value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
+	 * @property {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
+	 */
+	/**
 	 * メインとなるviewを生成するためのfunction。直接オブジェクトを渡せばいいんだけど、関数定義することで補完が効くようにしている。
-	 * @param {string} tag aやらdivやらspanやら。viewmodelを使った指定不可。
-	 * @param {ViewModel} viewmodel ViewModelを継承したclassをinstance化して渡す。
-	 * @param {() => Generator<Component, void, void> | string | () => string | null} contents function*(vm){}を入れて、Viewをjsで指定していく。yieldでComponentを返す。stringでinnerHTMLを指定することも可能で、viewmodel内の変数なら、`function(){return "<b>" + this.isBold + "</br>"}`のような指定も可能。
-	 * @param {object} style {display: "block"}のように指定可能。viewmodel内の変数なら、右辺には`{size: function(){return this.fontsize + "px"}}`といった指定も可能。
-	 * @param { string[] | object } classList classは予約語のため、classList。入れるclassのリストか、{class名: boolean}のオブジェクト。
-	 * @param { ((Event) => void)[] } events eventsを{type: "change", callback: click}の形で指定する。それを含む配列で指定。
-	 * @param {State} value input要素の場合のvalue。自動的にeventlistenerが作られて、bindingされる。 
-	 * @param {object} args aでのhrefや、imgでのsrcやaltなど、任意指定可能だが、{}で指定が必要。{href: "https://~", checked: vm.checked}など。※vm.checkedは実際にはvm.checked.valueを参照しない限りはobjectのため、内部データの変更にも対応できる。
-	 * @param {Element} 最初の1つ目の生成でのみ使用。どのオブジェクトの下に配置するかを指定。
-	 * @return {object} 2回目以降は再生成しない。vm.fontsizeなどの内部の値は変化するが、渡される変数自体は変化しないため。
+	 * @param {elObj} 
 	 */
 	const el = function({
 		tag = "section",
@@ -191,19 +193,6 @@ export const Euonymus = (function(exports){
 			this.reflectValue();	// valueにはStateが直接入り、bindingされる必要があるため、accessorWithListenerは不要。
 			this.reflectEvent();
 			this.compose();
-		}
-
-		/**
-		 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
-		 */
-		identify(){
-			const str = [this.#tag, this.contents.toString()].join("\n");
-			let hash = 2166136261; // FNV-1a 初期値
-			for (let i = 0; i < str.length; i++) {
-				hash ^= str.charCodeAt(i);
-				hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-			}
-			return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
 		}
 
 		/**
@@ -346,6 +335,20 @@ export const Euonymus = (function(exports){
 	const Column = function(){
 
 	};
+
+	/**
+	 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
+	 * @param { elObj } obj
+	 */
+	const identify = function(obj){
+		const str = obj.join("\n");
+		let hash = 2166136261; // FNV-1a 初期値
+		for (let i = 0; i < str.length; i++) {
+			hash ^= str.charCodeAt(i);
+			hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+		}
+		return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
+	}
 	
 	exports.el = el;
 	exports.State = State;
