@@ -142,17 +142,37 @@ export const Euonymus = (function(exports){
 		value = null,
 		args = {}
 	}){
-		// viewmodelがなかったら、継承なしのViewModelをglobal viewmodelとして渡す。
-		if(!viewmodel){
-			viewmodel = new ViewModel();
-		}
 		 return {
-			tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, value: value, args: args,
-			setParent: (root) => {
+			tag: tag, _viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, value: value, args: args,
+			/**
+			 * 指定されたViewModelを返す。指定されていない場合は基本的には親と同じViewModelを継承, 親もViewModelが設定されていないなら、Globalな継承なしのViewModelを生成。
+			 * @return { ViewModel }
+			 */
+			get viewmodel() {
+				if(!this._viewmodel){
+					return new ViewModel();
+				}
+				return this._viewmodel;
+			},
+			
+			/**
+			 * Componentオブジェクトの生成(= Html Elementの生成)とappendChildを同時に実行
+			 * @param { Element } parentElement このElementを配置する親のHTML ElementをDOMの要素で渡す。
+			 * @returns { Component }
+			 */
+			generateComponent: (parentElement) => {
 				const component = new Component(tag, viewmodel, contents, style, classList, events, value, args);
-				component.parentElement = root;
-				root.appendChild(component.el);
+				component.parentElement = parentElement;
+				parentElement.appendChild(component.el);
 				return component;
+			},
+			/** viewmodelがなかったら、親がある場合はcompose側で親viewmodelを設定する。parentViewmodelがnullの場合は何もしない(その場合はgetterで自動的に継承なしのViewModelが返される)
+			 * @param { ViewModel } parentViewmodel ViewModelのインスタンス
+			 */
+			setParentViewModelIfNull: (parentViewmodel) => {
+				if(!this._viewmodel){
+					this._viewmodel = parentViewmodel;
+				}
 			}
 		};
 	};
@@ -213,15 +233,29 @@ export const Euonymus = (function(exports){
 			if(variableType == "[object String]" || variableType == "[object Function]"){
 				let html = self.contents;
 				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
-					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
+					html = html(self.#viewmodel.accessorWithListener(self.compose, self));	// text objectなら、recomposeがかかったら、そのまま書き換えるしかないため、self.composeを渡す。
 				}
 				self.el.innerHTML = html;
 			} else {
 				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
 				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
-					const component = content.setParent(self.el);
+					content.setParentViewModelIfNull(self.#viewmodel);
+					const component = content.generateComponent(self.el);
 					self.#children.push(component);
 				}
+			}
+		}
+		/**
+		 * recomposeの場合は変更点のみ再描画。GeneratorFunctionの場合以外は通常のcomposeが呼ばれる。
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
+		 */
+		recompose(self = this){
+			for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
+				// 前回と同じel(= Component)が呼ばれているなら、そのComponent自体が内部でrecomposeするため、スキップすればよいが、
+				// 前回と異なるComponentが呼ばれているなら、Componentの再作成と、前回呼ばれて今回呼ばれなかったComponentの破棄を行う必要がある。
+				content.setParentViewModelIfNull(self.#viewmodel);
+				const component = content.generateComponent(self.el);
+				self.#children.push(component);
 			}
 		}
 		
@@ -293,33 +327,6 @@ export const Euonymus = (function(exports){
 		reflectArg(self = this){
 			for(const prop in this.args){
 				this.el.setAttribute(prop, this.args[prop]);
-			}
-		}
-		/**
-		 * recomposeの場合は変更点のみ再描画
-		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
-		 */
-		recompose(self = this){			
-			if(!self.contents){
-				return;
-			}
-			// contents部分を生成。GeneratorFunction以外ならstring化してinnerHTMLに、GeneratorFunctionなら実行。
-			const variableType = Object.prototype.toString.call(self.contents);
-			if(variableType == "[object String]" || variableType == "[object Function]"){
-				let html = self.contents;
-				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
-					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
-				}
-				self.el.innerHTML = html;
-			} else {
-				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
-
-				//TODO 再描画の際は、前回のelementを再利用
-				
-				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
-					const component = content.setParent(self.el);
-					self.#children.push(component);
-				}
 			}
 		}
 
