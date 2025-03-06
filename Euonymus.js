@@ -252,7 +252,7 @@ export const Euonymus = (function(exports){
 		recompose(self = this){
 			for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
 				// 前回と同じel(= Component)が呼ばれているなら、そのComponent自体が内部でrecomposeするため、スキップすればよいが、
-				// 前回と異なるComponentが呼ばれているなら、Componentの再作成と、前回呼ばれて今回呼ばれなかったComponentの破棄を行う必要がある。
+				// 前回と異なるComponentが呼ばれているなら、Componentの作成と、前回呼ばれて今回呼ばれなかったComponentの破棄を行う必要がある。
 				content.setParentViewModelIfNull(self.#viewmodel);
 				const component = content.generateComponent(self.el);
 				self.#children.push(component);
