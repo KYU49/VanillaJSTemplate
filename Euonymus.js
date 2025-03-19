@@ -153,7 +153,22 @@ export const Euonymus = (function(exports){
 				component.parentElement = root;
 				root.appendChild(component.el);
 				return component;
-			}
+			},
+			
+			/**
+			 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
+			 * @return {string}
+			 */
+			identify: () => {
+				const str = tag + contents.toString();
+				let hash = 2166136261; // FNV-1a 初期値
+				for (let i = 0; i < str.length; i++) {
+					hash ^= str.charCodeAt(i);
+					hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+				}
+				return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
+			},
+			identity: identity()
 		};
 	};
 
@@ -201,7 +216,7 @@ export const Euonymus = (function(exports){
 		}
 
 		/**
-		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。viewmodelから通知があれば、再度呼ばれる。
+		 * 描画を行うためにcontentsの中に置かれたComponentの描画を実行する。
 		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
 		 */
 		compose(self = this){
@@ -341,20 +356,6 @@ export const Euonymus = (function(exports){
 
 	};
 
-	/**
-	 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
-	 * @param { elObj } obj
-	 */
-	const identify = function(obj){
-		const str = obj.join("\n");
-		let hash = 2166136261; // FNV-1a 初期値
-		for (let i = 0; i < str.length; i++) {
-			hash ^= str.charCodeAt(i);
-			hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-		}
-		return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
-	}
-	
 	exports.el = el;
 	exports.State = State;
 	exports.state = state;
