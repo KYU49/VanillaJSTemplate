@@ -75,6 +75,12 @@ export const Euonymus = (function(exports){
 		}
 
 		/**
+		 * 同じcontentsで2回recomposeが走らないように。
+		 * @typedef {WeakMap<Component, Proxy>} accessorMap
+		 */
+		accessorMap = new WeakMap();
+
+		/**
 		 * Proxy.xで、このviewmodelのStateにアクセスでき、この中でgetterが呼ばれると、recomposeリストに自動追加される。
 		 * @param {() => void} callerFunction 呼び出し元のreflect関数 or compose関数など。
 		 * @param {Component} callerComponents  
@@ -84,7 +90,9 @@ export const Euonymus = (function(exports){
 			const caller = callerFunction;
 			const components = callerComponents;
 			const self = this;
-			return new Proxy({}, {
+			// 一度生成したものを再生成しないようにweakmapでsingletonに。
+			let proxy = null;
+			return accessorMap.has(components) ? accessorMap[components] : new Proxy({}, {
 				get: (target, prop, reveiver) => {
 					if(self[prop] && self[prop] instanceof State){	// ViewModel内に標的のstateが存在するか？
 						// 呼び出し元を記憶するため、currentJobをlistenerに登録し、propertyにsetが実行されたら、そのlistenerを呼び出せるようにする。
@@ -173,19 +181,26 @@ export const Euonymus = (function(exports){
 	};
 
 	const Component = class{
-		/** @type {WeakNap} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。 */
-		#composed = new WeakMap();
-		/** @type {Element} コンポーネントのroot element */
+		/** @type { Element } コンポーネントのroot element */
 		el = null;
-		/** @type {ParentElement | null} 親のDOM element*/
+		/** @type { ParentElement | null } 親のDOM element*/
 		parentElement = null;
-		/** @type {Component[]} 子コンポーネントのinstance */
-		#children = [];
-		/** @type {string} htmlタグの要素aとかdivとか */
+
+
+		//FIXME 多分これでうまくいくんだけど、elementを除外する処理を考える必要がある。
+		/** @type { Component[] } 順にComponentを入れていく。分岐があった場合は最後に追加し、WeakMapの方からジャンプできるようにする。 */
+		#childrenComponents = [];
+		/** @type { WeakMap<string, int> } identityを入れて、childrenComponents内のどの位置にいるかをわかるようにする */
+		#childrenComonentsIndex = new WeakMap();
+
+		// if文などで分岐があった際に、childrenComponentsの最後に追加しつつ、こちらにも追加することで、分岐時にindexをskipして分岐先に移動できるようにする。
+		// 次のidentityを取得した際に、WeakMapで再確認し、hildrenComponentsの元の要素に合流する場合はそちらにジャンプできるようにする。
+
+		/** @type { string } htmlタグの要素aとかdivとか */
 		#tag;
-		/** @type {ViewModel} viewmodel。instance化して渡す */
+		/** @type { ViewModel } viewmodel。instance化して渡す */
 		#viewmodel;
-		/** @type {State} inputの場合のattribute valueの中身 */
+		/** @type { State } inputの場合のattribute valueの中身 */
 		inputValue = null;
 
 		contents;
@@ -235,11 +250,54 @@ export const Euonymus = (function(exports){
 				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
 				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
 					const component = content.setParent(self.el);
-					self.#children.push(component);
+					// 生成されたcomponentを順に保存しておくことで、同じcomponentを描画しようとした際に、以前に描画したcomponentを呼び出せるようにする。
+					// 通常なら順番に入っていくが、分岐などがあった場合は、順番がずれるため、そのcontentから生成されたcomponentが何番目に入っているかを記録し、ジャンプできるようにする。
+					self.#childrenComonentsIndex.set(content.identity, self.#childrenComponents.length);
+					self.#childrenComponents.push(component);
 				}
 			}
 		}
 		
+		/**
+		 * recomposeの場合は変更点のみ再描画
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
+		 */
+		recompose(self = this){
+			if(!self.contents){
+				return;
+			}
+			// contents部分を生成。GeneratorFunction以外ならstring化してinnerHTMLに、GeneratorFunctionなら実行。
+			const variableType = Object.prototype.toString.call(self.contents);
+			if(variableType == "[object String]" || variableType == "[object Function]"){
+				let html = self.contents;
+				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
+					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
+				}
+				self.el.innerHTML = html;
+			} else {
+				// self.contentsはfunction*()のため、yieldで返ってきた値を処理
+				//TODO 再描画の際は、前回のelementを再利用
+				let index = 0;
+				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
+					if(content.identity == self.#childrenComponents[index].identity){
+						// 既に生成済みの場合は前の記録を読み出す
+						const component = self.#childrenComponents[index];
+						index++;
+					} else {
+						//FIXME identityが一致した要素があった場合バグりそうだから、要検討。
+						// もしも、この要素が分岐した要素で、分岐先が既に生成されているなら、indexを移動する。
+						if(self.#childrenComonentsIndex.has(content.identity)){
+							index = self.#childrenComonentsIndex[content.identity];
+							const component = self.#childrenComponents[index];
+							index++;
+						} else {
+							// 未生成のため、recomposeではなく、composeの方と同様に新規生成メソッドを実行
+							//TODO
+						}
+					}
+				}
+			}
+		}
 		// styleなどの適用。また、このcomponentへの参照と、どういった要素に登録されたかをその際に使った変数に記録させる必要がある(あとで呼び出せるように)。
 		/** 
 		 * スタイルの反映。スタイル以外にもidやclassなども。
@@ -308,33 +366,6 @@ export const Euonymus = (function(exports){
 		reflectArg(self = this){
 			for(const prop in this.args){
 				this.el.setAttribute(prop, this.args[prop]);
-			}
-		}
-		/**
-		 * recomposeの場合は変更点のみ再描画
-		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
-		 */
-		recompose(self = this){			
-			if(!self.contents){
-				return;
-			}
-			// contents部分を生成。GeneratorFunction以外ならstring化してinnerHTMLに、GeneratorFunctionなら実行。
-			const variableType = Object.prototype.toString.call(self.contents);
-			if(variableType == "[object String]" || variableType == "[object Function]"){
-				let html = self.contents;
-				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
-					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
-				}
-				self.el.innerHTML = html;
-			} else {
-				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
-
-				//TODO 再描画の際は、前回のelementを再利用
-				
-				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
-					const component = content.setParent(self.el);
-					self.#children.push(component);
-				}
 			}
 		}
 
