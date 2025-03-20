@@ -43,7 +43,7 @@ import { Euonymus } from "./Euonymus.js";
                 });
             }
         });
-        component.setParent(container);
+        component.generateComponent(container);
 
         /*
         const test = document.getElementById("test");

@@ -150,18 +150,31 @@ export const Euonymus = (function(exports){
 		value = null,
 		args = {}
 	}){
-		// viewmodelがなかったら、継承なしのViewModelをglobal viewmodelとして渡す。
-		if(!viewmodel){
-			viewmodel = new ViewModel();
-		}
 		 return {
-			tag: tag, viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, value: value, args: args,
-			setParent: (root) => {
+			tag: tag, _viewmodel: viewmodel, contents: contents, style: style, classList: classList, events: events, value: value, args: args,
+			/**
+			 * 指定されたViewModelを返す。指定されていない場合は基本的には親と同じViewModelを継承, 親もViewModelが設定されていないなら、Globalな継承なしのViewModelを生成。
+			 * @return { ViewModel }
+			 */
+			get viewmodel() {
+				if(!this._viewmodel){
+					return new ViewModel();
+				}
+				return this._viewmodel;
+			},
+			
+			/**
+			 * Componentオブジェクトの生成(= Html Elementの生成)とappendChildを同時に実行
+			 * @param { Element } parentElement このElementを配置する親のHTML ElementをDOMの要素で渡す。
+			 * @returns { Component }
+			 */
+			generateComponent: (parentElement) => {
 				const component = new Component(tag, viewmodel, contents, style, classList, events, value, args);
-				component.parentElement = root;
-				root.appendChild(component.el);
+				component.parentElement = parentElement;
+				parentElement.appendChild(component.el);
 				return component;
 			},
+<<<<<<< HEAD
 			
 			/**
 			 * このオブジェクトが他のオブジェクトと同一かを判断するために、変更されづらい要素をhash化したものを返す。
@@ -177,6 +190,16 @@ export const Euonymus = (function(exports){
 				return (hash >>> 0).toString(16); // 符号なし整数化して16進数に変換
 			},
 			identity: identity()
+=======
+			/** viewmodelがなかったら、親がある場合はcompose側で親viewmodelを設定する。parentViewmodelがnullの場合は何もしない(その場合はgetterで自動的に継承なしのViewModelが返される)
+			 * @param { ViewModel } parentViewmodel ViewModelのインスタンス
+			 */
+			setParentViewModelIfNull: (parentViewmodel) => {
+				if(!this._viewmodel){
+					this._viewmodel = parentViewmodel;
+				}
+			}
+>>>>>>> 2e45126ffc148d5d07b8ed2c87734b926e711784
 		};
 	};
 
@@ -243,18 +266,37 @@ export const Euonymus = (function(exports){
 			if(variableType == "[object String]" || variableType == "[object Function]"){
 				let html = self.contents;
 				if(variableType == "[object Function]"){	// 動的にhtmlを生成する場合は、生成時に使用されたStateを記録。
-					html = html(self.#viewmodel.accessorWithListener(self.recompose, self));
+					html = html(self.#viewmodel.accessorWithListener(self.compose, self));	// text objectなら、recomposeがかかったら、そのまま書き換えるしかないため、self.composeを渡す。
 				}
 				self.el.innerHTML = html;
 			} else {
 				// 初実行の場合は全部描画する。self.contentsはfunction*()のため、yieldで返ってきた値を処理
 				for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
+<<<<<<< HEAD
 					const component = content.setParent(self.el);
 					// 生成されたcomponentを順に保存しておくことで、同じcomponentを描画しようとした際に、以前に描画したcomponentを呼び出せるようにする。
 					// 通常なら順番に入っていくが、分岐などがあった場合は、順番がずれるため、そのcontentから生成されたcomponentが何番目に入っているかを記録し、ジャンプできるようにする。
 					self.#childrenComonentsIndex.set(content.identity, self.#childrenComponents.length);
 					self.#childrenComponents.push(component);
+=======
+					content.setParentViewModelIfNull(self.#viewmodel);
+					const component = content.generateComponent(self.el);
+					self.#children.push(component);
+>>>>>>> 2e45126ffc148d5d07b8ed2c87734b926e711784
 				}
+			}
+		}
+		/**
+		 * recomposeの場合は変更点のみ再描画。GeneratorFunctionの場合以外は通常のcomposeが呼ばれる。
+		 * @param {Component} self 基本的にはthis。callbackで呼ばれた際に、Componentを渡さないと、thisが呼べなくなるため。
+		 */
+		recompose(self = this){
+			for(const content of self.contents(self.#viewmodel.accessorWithListener(self.recompose, self))){
+				// 前回と同じel(= Component)が呼ばれているなら、そのComponent自体が内部でrecomposeするため、スキップすればよいが、
+				// 前回と異なるComponentが呼ばれているなら、Componentの作成と、前回呼ばれて今回呼ばれなかったComponentの破棄を行う必要がある。
+				content.setParentViewModelIfNull(self.#viewmodel);
+				const component = content.generateComponent(self.el);
+				self.#children.push(component);
 			}
 		}
 		
