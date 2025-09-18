@@ -27,11 +27,21 @@ export class DataBinding{
     /**
      * @typedef {[BoundElement]} #boundElements この変数にbindされているhtml elementと、bindの情報。
      * @typedef {Object} #value ここに値が入る。getterとsetterで制御。
-     * @typedef {boolean} overrideWithState 例えばページを更新した際に、前の入力が残っていた場合、true: 前の入力で変数を上書き; false: 変数のデフォルト値でelementの値を書き換え。
+     * @typedef {boolean} overrideWithState 例えばページを更新した際に、前の入力が残っていた場合、
+     * true: 前の入力で変数を上書き; false: 変数のデフォルト値でelementの値を書き換え。
      * @typedef {boolean} globalOverrideWithState 以降に作られるobjectの全てのisStateOverrideはこの値になる。
      */
     #value;
     #boundElements = [];
+
+    /**
+     * 値変更時に呼び出されるコールバック関数。
+     * @callback ValueChangeListener
+     * @param {*} newValue - 変更後の値
+     * @param {*} oldValue - 変更前の値
+     */
+    #valueChangeListeners = [];
+    
     overrideWithState;
     static globalOverrideWithState = false;
 
@@ -48,6 +58,9 @@ export class DataBinding{
         if(this.#value != newValue){
             for(const tempElement of this.#boundElements){
                 tempElement.value2element(newValue, tempElement.element);
+            }
+            for(const listener of this.#valueChangeListeners){
+                listener(newValue, this.#value);
             }
             this.#value = newValue;
         }
@@ -212,5 +225,21 @@ export class DataBinding{
                 boundElement.value2element(this.value, boundElement.element);
             }
         }
+    }
+
+    /**
+     * 値が変わった時(valueの値が変更された時)に実行する処理を変数に追加する。
+     * @param {ValueChangeListener} listener - 新しい値が設定された時に呼び出されるコールバック。
+     */
+    addValueChangeListener(listener){
+        this.#valueChangeListeners.push(listener);
+    }
+    /**
+     * 値が変わった時に実行する処理を削除する。
+     * @param {ValueChangeListener} listener - 解除したいコールバック関数。
+     * `addValueChangeListener` で登録したものと同じ参照である必要があります。
+     */
+    removeValueChangeListener(listener){
+        this.#valueChangeListeners.splice(this.#valueChangeListeners.indexOf(listener));
     }
 }
