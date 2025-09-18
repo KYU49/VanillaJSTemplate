@@ -97,8 +97,8 @@ export class DataBinding{
             super(element, 
                 (newValue, element) => {
                     // 一応カーソル位置を保持。javascriptのselectionは文字数より大きい値を入れてもerrorを出さない。
-                    start = element.selectionStart;
-                    end = element.selectionEnd;
+                    const start = element.selectionStart;
+                    const end = element.selectionEnd;
                     element.value = newValue;
                     element.selectionStart = start;
                     element.selectionEnd = end;
