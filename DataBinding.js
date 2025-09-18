@@ -56,13 +56,14 @@ export class DataBinding{
     set value(newValue){
         // 各エレメントに値の変更を通知
         if(this.#value != newValue){
+            let oldValue = this.#value;
             for(const tempElement of this.#boundElements){
                 tempElement.value2element(newValue, tempElement.element);
             }
-            for(const listener of this.#valueChangeListeners){
-                listener(newValue, this.#value);
-            }
             this.#value = newValue;
+            for(const listener of this.#valueChangeListeners){
+                listener(newValue, oldValue);
+            }
         }
     }
 
