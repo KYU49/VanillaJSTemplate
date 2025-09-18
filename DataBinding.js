@@ -214,9 +214,17 @@ export class DataBinding{
         this.#boundElements.push(boundElement);
         // eventlistenerが指定されていれば、設定。
         if(boundElement.eventListenerType != null){
-            boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
-                boundElement.element2value(self, boundElement.element);
-            });
+            if(boundElement.element instanceof RadioNodeList){
+                Array.from(boundElement.element).forEach(radio => {
+                    radio.addEventListener("change", () => {
+                        boundElement.element2value(self, boundElement.element);
+                    });
+                });
+            } else {
+                boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
+                    boundElement.element2value(self, boundElement.element);
+                });
+            }
 
             // 更新前の情報が残ってしまうことがあるため、どちらかの値で上書きする。
             if(this.overrideWithState){
