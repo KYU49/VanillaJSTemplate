@@ -27,11 +27,21 @@ export class DataBinding{
     /**
      * @typedef {[BoundElement]} #boundElements この変数にbindされているhtml elementと、bindの情報。
      * @typedef {Object} #value ここに値が入る。getterとsetterで制御。
-     * @typedef {boolean} overrideWithState 例えばページを更新した際に、前の入力が残っていた場合、true: 前の入力で変数を上書き; false: 変数のデフォルト値でelementの値を書き換え。
+     * @typedef {boolean} overrideWithState 例えばページを更新した際に、前の入力が残っていた場合、
+     * true: 前の入力で変数を上書き; false: 変数のデフォルト値でelementの値を書き換え。
      * @typedef {boolean} globalOverrideWithState 以降に作られるobjectの全てのisStateOverrideはこの値になる。
      */
     #value;
     #boundElements = [];
+
+    /**
+     * 値変更時に呼び出されるコールバック関数。
+     * @callback ValueChangeListener
+     * @param {*} newValue - 変更後の値
+     * @param {*} oldValue - 変更前の値
+     */
+    #valueChangeListeners = [];
+    
     overrideWithState;
     static globalOverrideWithState = false;
 
@@ -46,10 +56,14 @@ export class DataBinding{
     set value(newValue){
         // 各エレメントに値の変更を通知
         if(this.#value != newValue){
+            let oldValue = this.#value;
             for(const tempElement of this.#boundElements){
                 tempElement.value2element(newValue, tempElement.element);
             }
             this.#value = newValue;
+            for(const listener of this.#valueChangeListeners){
+                listener(newValue, oldValue);
+            }
         }
     }
 
@@ -84,8 +98,8 @@ export class DataBinding{
             super(element, 
                 (newValue, element) => {
                     // 一応カーソル位置を保持。javascriptのselectionは文字数より大きい値を入れてもerrorを出さない。
-                    start = element.selectionStart;
-                    end = element.selectionEnd;
+                    const start = element.selectionStart;
+                    const end = element.selectionEnd;
                     element.value = newValue;
                     element.selectionStart = start;
                     element.selectionEnd = end;
@@ -201,9 +215,17 @@ export class DataBinding{
         this.#boundElements.push(boundElement);
         // eventlistenerが指定されていれば、設定。
         if(boundElement.eventListenerType != null){
-            boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
-                boundElement.element2value(self, boundElement.element);
-            });
+            if(boundElement.element instanceof RadioNodeList){
+                Array.from(boundElement.element).forEach(radio => {
+                    radio.addEventListener("change", () => {
+                        boundElement.element2value(self, boundElement.element);
+                    });
+                });
+            } else {
+                boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
+                    boundElement.element2value(self, boundElement.element);
+                });
+            }
 
             // 更新前の情報が残ってしまうことがあるため、どちらかの値で上書きする。
             if(this.overrideWithState){
@@ -212,5 +234,21 @@ export class DataBinding{
                 boundElement.value2element(this.value, boundElement.element);
             }
         }
+    }
+
+    /**
+     * 値が変わった時(valueの値が変更された時)に実行する処理を変数に追加する。
+     * @param {ValueChangeListener} listener - 新しい値が設定された時に呼び出されるコールバック。
+     */
+    addValueChangeListener(listener){
+        this.#valueChangeListeners.push(listener);
+    }
+    /**
+     * 値が変わった時に実行する処理を削除する。
+     * @param {ValueChangeListener} listener - 解除したいコールバック関数。
+     * `addValueChangeListener` で登録したものと同じ参照である必要があります。
+     */
+    removeValueChangeListener(listener){
+        this.#valueChangeListeners.splice(this.#valueChangeListeners.indexOf(listener));
     }
 }
