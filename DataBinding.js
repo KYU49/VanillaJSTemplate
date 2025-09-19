@@ -33,6 +33,7 @@ export class DataBinding{
      */
     #value;
     #boundElements = [];
+    #boundListeners = [];
 
     /**
      * 値変更時に呼び出されるコールバック関数。
@@ -98,8 +99,8 @@ export class DataBinding{
             super(element, 
                 (newValue, element) => {
                     // 一応カーソル位置を保持。javascriptのselectionは文字数より大きい値を入れてもerrorを出さない。
-                    const start = element.selectionStart;
-                    const end = element.selectionEnd;
+                    let start = element.selectionStart;
+                    let end = element.selectionEnd;
                     element.value = newValue;
                     element.selectionStart = start;
                     element.selectionEnd = end;
@@ -217,14 +218,18 @@ export class DataBinding{
         if(boundElement.eventListenerType != null){
             if(boundElement.element instanceof RadioNodeList){
                 Array.from(boundElement.element).forEach(radio => {
-                    radio.addEventListener("change", () => {
+                    const listener = () => {
                         boundElement.element2value(self, boundElement.element);
-                    });
+                    };
+                    radio.addEventListener("change", listener);
+                    this.#boundListeners.push({element: radio, listener: listener});
                 });
             } else {
-                boundElement.element.addEventListener(boundElement.eventListenerType, (e) => {
+                const listener = () => {
                     boundElement.element2value(self, boundElement.element);
-                });
+                };
+                boundElement.element.addEventListener(boundElement.eventListenerType, listener);
+                this.#boundListeners.push({element: boundElement.element, listener: listener});
             }
 
             // 更新前の情報が残ってしまうことがあるため、どちらかの値で上書きする。
@@ -234,6 +239,50 @@ export class DataBinding{
                 boundElement.value2element(this.value, boundElement.element);
             }
         }
+    }
+
+    /**
+     * 指定したelementまたはBoundElementをunbindする。
+     * 引数なし(null)で全解除
+     * @param {?DataBinding.BoundElement | ?Element} targetElement 解除したいelementまたはBoundElement
+     */
+    unbindElement(targetElement=null){
+        // 無指定で全削除
+        if (targetElement == null){
+            this.#boundElements.forEach((ele) => {
+                this.unbindElement(ele);
+            });
+            return;
+        }
+        const isBoundElement = targetElement instanceof DataBinding.BoundElement;
+        const boundElement = isBoundElement
+            ? targetElement
+            : this.#boundElements.find(be => be.element === targetElement);
+
+        if(!boundElement) return;
+
+        // イベントリスナー削除
+        if(boundElement.eventListenerType != null){
+            if(boundElement.element instanceof RadioNodeList){
+                Array.from(boundElement.element).forEach(radio => {
+                    const listener = this.#boundListeners.find(be => be.element == radio);
+                    if(listener){
+                        radio.removeEventListener("change", listener);
+                    }
+                });
+            } else {
+                const listener = this.#boundListeners.find(be => be.element == boundElement.element);
+                if(listener){
+                    boundElement.element.removeEventListener(
+                        boundElement.eventListenerType,
+                        boundElement._listener
+                    );
+                }
+            }
+        }
+
+        // 配列から削除
+        this.#boundElements = this.#boundElements.filter(be => be !== boundElement);
     }
 
     /**
