@@ -221,7 +221,7 @@ export class DataBinding{
                     const listener = () => {
                         boundElement.element2value(self, boundElement.element);
                     };
-                    radio.addEventListener("change", listener);
+                    radio.addEventListener(boundElement.eventListenerType, listener);
                     this.#boundListeners.push({element: radio, listener: listener});
                 });
             } else {
@@ -294,10 +294,15 @@ export class DataBinding{
     }
     /**
      * 値が変わった時に実行する処理を削除する。
-     * @param {ValueChangeListener} listener - 解除したいコールバック関数。
-     * `addValueChangeListener` で登録したものと同じ参照である必要があります。
+     * @param {?ValueChangeListener} listener - 解除したいコールバック関数。
+     * `addValueChangeListener` で登録したものと同じ参照である必要があある。
+     * null指定で全削除。
      */
-    removeValueChangeListener(listener){
-        this.#valueChangeListeners.splice(this.#valueChangeListeners.indexOf(listener));
+    removeValueChangeListener(listener=null){
+        if(listener == null){
+            this.#valueChangeListeners.splice(0);
+        } else {
+            this.#valueChangeListeners.splice(this.#valueChangeListeners.indexOf(listener), 1);
+        }
     }
 }
