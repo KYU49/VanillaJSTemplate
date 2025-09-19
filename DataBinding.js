@@ -286,7 +286,7 @@ export class DataBinding{
     }
 
     /**
-     * 値が変わった時(valueの値が変更された時)に実行する処理を変数に追加する。
+     * 値が変わった時(valueの値が変更された時)に実行する処理を変数に追加する。(newValue, oldValue)が渡される。
      * @param {ValueChangeListener} listener - 新しい値が設定された時に呼び出されるコールバック。
      */
     addValueChangeListener(listener){
