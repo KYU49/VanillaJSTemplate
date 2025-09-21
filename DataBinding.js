@@ -203,6 +203,17 @@ export class DataBinding{
             )
         }
     }
+    // attrの値にbindしたい場合のテンプレート
+    static BoundAttr = class extends DataBinding.BoundElement{
+        constructor(element, attr){
+            super(element,
+                (newValue, element) => {
+                    element.setAttribute(this.attr, newValue);
+                }
+            )
+            this.attr = attr;
+        }
+    }
 
     /**
      * 指定した任意のelementに値をbindする。
