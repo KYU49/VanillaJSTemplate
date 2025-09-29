@@ -47,7 +47,7 @@ export const Euonymus = (function(exports){
 		/** @type {Job[]} 特定の子componentが描画済みなら、そのComponentを返す。keyに{tag, contentsのhash}というobjectを渡す。 */
 		listeners = [];
 		constructor(initialValue){
-			this.value = initialValue;
+			this._value = initialValue;
 		}
 		get value(){
 			return this._value;
